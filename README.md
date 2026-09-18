@@ -1,0 +1,1 @@
+# capcha-bot-file
